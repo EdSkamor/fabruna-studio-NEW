@@ -1,0 +1,11 @@
+# Zmiany w tych ścieżkach wymagają przeglądu właściciela.
+# Lista zgodna z dokumentacja/PETLA_INZYNIERSKA.md (gałąź typu „zasady”).
+/testy/ @EdSkamor
+/sedzia/ @EdSkamor
+/.github/ @EdSkamor
+/zlecenia/ @EdSkamor
+/AGENTS.md @EdSkamor
+/pyproject.toml @EdSkamor
+/dokumentacja/ @EdSkamor
+/.gitignore @EdSkamor
+/.secrets.baseline @EdSkamor
