@@ -24,7 +24,6 @@ from .narzedzia import (
 
 POZYTYWNY, NEGATYWNY, POMINIETY = "pozytywny", "negatywny", "pominiety"
 ILE_PRZEBIEGOW = 3
-ILE_SZCZEGOLOW = 15
 CZERWONE = ("failed", "error")
 
 
@@ -57,10 +56,7 @@ class Kontekst:
 
 
 def _krok(nazwa: str, dobrze: bool, opis: str, liczby: dict | None = None, szczegoly: list[str] | None = None) -> Krok:
-    szczegoly = szczegoly or []
-    if len(szczegoly) > ILE_SZCZEGOLOW:
-        szczegoly = [*szczegoly[:ILE_SZCZEGOLOW], f"… i {len(szczegoly) - ILE_SZCZEGOLOW} kolejnych"]
-    return Krok(nazwa, POZYTYWNY if dobrze else NEGATYWNY, opis, liczby or {}, szczegoly)
+    return Krok(nazwa, POZYTYWNY if dobrze else NEGATYWNY, opis, liczby or {}, szczegoly or [])
 
 
 def plik_zlecenia(k: Kontekst) -> Path:

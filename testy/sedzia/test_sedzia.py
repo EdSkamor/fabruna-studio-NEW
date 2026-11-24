@@ -254,6 +254,10 @@ def test_k_slabe_testy_wynik_mutacyjny_ponizej_progu(repo):
     niezabite = wynik.krok("mutacje")["szczegoly"]
     assert len(niezabite) == liczby["ocalale"] + liczby["bez_testu"], "wyrok wskazuje każdego niezabitego mutanta"
     assert all(wiersz.startswith("fabruna.liczenie.") for wiersz in niezabite)
+    # Wyrok niesie różnicę każdego niezabitego mutanta — materiał dla autora testów i recenzenta.
+    assert all("\n-" in wiersz and "\n+" in wiersz for wiersz in niezabite), niezabite
+    assert any("\n-        wynik += liczba" in wiersz for wiersz in niezabite)
+    assert "@@" not in wynik.wyjscie, "na ekranie tylko nazwy mutantów, różnice są w wyrok.json"
     # Ten sam kod i testy przechodzą, gdy próg leży poniżej zmierzonego wyniku: decyduje wyłącznie próg.
     nizszy = repo.sedzia(*KOD, "--prog-mutacji", str(liczby["wynik_proc"] - 1))
     assert nizszy.kod == 0, nizszy.wyjscie

@@ -13,7 +13,7 @@ from pathlib import Path
 
 from .narzedzia import LIMIT_MUTACJI_S, BladUzycia, modul, ogon
 
-ILE_NIEZABITYCH = 12
+ILE_ROZNIC = 40  # tylu niezabitym mutantom sędzia dołącza różnicę względem oryginału
 # Kod, który wyłącza mutacje albo rozpoznaje, że jest testowany lub mutowany, mógłby zawyżyć wynik.
 ZAKAZANE_W_KODZIE = re.compile(r"pragma:\s*no mutate|MUTANT_UNDER_TEST|mutmut|PYTEST_CURRENT_TEST|\bpytest\b")
 
@@ -108,6 +108,10 @@ def mutuj(korzen: Path, pliki: list[str] | None, testy: str, prog: float) -> tup
         statystyki = json.loads(plik.read_text("utf-8"))
         wyniki = modul("mutmut", ["results"], piaskownica, LIMIT_MUTACJI_S).stdout
         niezabite = [w.strip() for w in wyniki.splitlines() if ": " in w]
+        for numer, wiersz in enumerate(niezabite[:ILE_ROZNIC]):
+            pokaz = modul("mutmut", ["show", wiersz.rsplit(": ", 1)[0]], piaskownica, LIMIT_MUTACJI_S)
+            if pokaz.returncode == 0:  # pierwszy wiersz to nagłówek „# nazwa: stan”, dalej różnica
+                niezabite[numer] = "\n".join([wiersz, *pokaz.stdout.strip().splitlines()[1:]])
 
     liczby = {
         "wszystkie": statystyki["total"],
@@ -123,9 +127,6 @@ def mutuj(korzen: Path, pliki: list[str] | None, testy: str, prog: float) -> tup
     if wynik is None:
         return False, "brak mutantów do oceny w mutowanych plikach", liczby, []
     liczby["wynik_proc"] = round(wynik, 1)
-    szczegoly = niezabite[:ILE_NIEZABITYCH]
-    if len(niezabite) > ILE_NIEZABITYCH:
-        szczegoly.append(f"… i {len(niezabite) - ILE_NIEZABITYCH} kolejnych niezabitych mutantów")
     porownanie = "≥" if wynik >= prog else "<"
     procent = f"{wynik:.1f}".replace(".", ",")
     opis = (
@@ -133,4 +134,4 @@ def mutuj(korzen: Path, pliki: list[str] | None, testy: str, prog: float) -> tup
         f"przekroczony czas {liczby['przekroczony_czas']}, ocalałe {liczby['ocalale']}, bez testu {liczby['bez_testu']}, "
         f"pominięte {liczby['pominiete']}, wszystkie {liczby['wszystkie']}; testy: {testy}"
     )
-    return wynik >= prog, opis, liczby, szczegoly
+    return wynik >= prog, opis, liczby, niezabite

@@ -21,8 +21,10 @@ Program nie sprawdza sam siebie. O tym, czy praca jest zrobiona, rozstrzyga sęd
 
 1. Zlecenie `zlecenia/NNNN-opis.md` według `zlecenia/WZOR.md`; kryteria w wierszach `- **K01 — nazwa.** treść`.
 2. Gałąź `testy/NNNN-opis`: autor testów oddaje testy. Sędzia w trybie „testy” sprawdza, że są czerwone, stabilne i pokrywają każde kryterium. Scalenie.
-3. Gałąź `kod/NNNN-opis`: wykonawca oddaje kod. Sędzia w trybie „kod” sprawdza testy zlecenia, cały zestaw, sekrety i wynik mutacyjny. Limit podejść jest w zleceniu; po jego wyczerpaniu sesja oddaje raport z diagnozą.
+3. Gałąź `kod/NNNN-opis` (od gałęzi z testami): wykonawca oddaje kod. Sędzia w trybie „kod” sprawdza testy zlecenia, cały zestaw, sekrety i wynik mutacyjny. Limit podejść jest w zleceniu; po jego wyczerpaniu sesja oddaje raport z diagnozą.
 4. Recenzja z niezależnej sesji, potem scalenie przez właściciela.
+
+Bazą (`--baza`) jest zawsze stan, od którego gałąź odchodzi: `main` po scaleniu poprzedniego etapu albo — przy pracy lokalnej przed scaleniem — gałąź poprzedniego etapu (zasady → testy → kod).
 
 ## 4. Rodzaje gałęzi i dozwolone ścieżki
 
@@ -54,7 +56,7 @@ Tryb `galaz` wyznacza tryb i numer zlecenia z nazwy gałęzi (używa go CI); `ma
 
 Kody wyjścia: `0` — wyrok pozytywny; `1` — negatywny; `2` — błąd użycia albo wewnętrzny (wtedy wyrok nie powstaje).
 
-`wyrok.json` zawiera: `wyrok`, `tryb`, `zlecenie`, `baza`, `baza_commit`, `head`, `drzewo_czyste`, `galaz`, `narzedzia` (wersje), `czas_s` oraz listę `kroki`. Na początku przebiegu sędzia usuwa stary plik wyroku. `drzewo_czyste: false` oznacza, że oceniane były także zmiany niezatwierdzone, więc wyrok nie opisuje samego commita `head`. Każdy krok ma `nazwa`, `wynik` (`pozytywny`, `negatywny`, `pominiety`), `opis`, `liczby` i `szczegoly`. Wyrok jest pozytywny tylko wtedy, gdy wszystkie kroki są pozytywne.
+`wyrok.json` zawiera: `wyrok`, `tryb`, `zlecenie`, `baza`, `baza_commit`, `head`, `drzewo_czyste`, `galaz`, `narzedzia` (wersje), `czas_s` oraz listę `kroki`. Na początku przebiegu sędzia usuwa stary plik wyroku. `drzewo_czyste: false` oznacza, że oceniane były także zmiany niezatwierdzone, więc wyrok nie opisuje samego commita `head`. Każdy krok ma `nazwa`, `wynik` (`pozytywny`, `negatywny`, `pominiety`), `opis`, `liczby` i `szczegoly` (w pliku pełne; na ekranie pierwsze 12 pozycji). Wyrok jest pozytywny tylko wtedy, gdy wszystkie kroki są pozytywne.
 
 Reguły ogólne:
 
@@ -106,7 +108,7 @@ Krok `mutacje` jest negatywny także wtedy, gdy: wśród zmian w `src/` nie ma p
 - Mutant bez testu, ocalały i podejrzany zostają w mianowniku, więc obniżają wynik.
 - Przykład: 11 mutantów, 1 pominięty, 6 zabitych, 1 z przekroczonym czasem → (6 + 1) / (11 − 1) = 70%.
 
-Sędzia uruchamia mutmut w piaskownicy: do katalogu tymczasowego kopiuje `src/` i `testy/` (bez `testy/sedzia`) oraz zapisuje tam własny `pyproject.toml`. Bierze do niego tabelę `[tool.pytest.ini_options]` i `[tool.mutmut]` z repozytorium, po czym sam ustawia `source_paths = ["src"]`, `also_copy = ["testy"]`, `only_mutate` (lista zmienionych plików) i `pytest_add_cli_args_test_selection` (katalog testów zlecenia). Liczby czyta z `mutants/mutmut-cicd-stats.json` (polecenie `mutmut export-cicd-stats`), a nazwy niezabitych mutantów z `mutmut results`.
+Sędzia uruchamia mutmut w piaskownicy: do katalogu tymczasowego kopiuje `src/` i `testy/` (bez `testy/sedzia`) oraz zapisuje tam własny `pyproject.toml`. Bierze do niego tabelę `[tool.pytest.ini_options]` i `[tool.mutmut]` z repozytorium, po czym sam ustawia `source_paths = ["src"]`, `also_copy = ["testy"]`, `only_mutate` (lista zmienionych plików) i `pytest_add_cli_args_test_selection` (katalog testów zlecenia). Liczby czyta z `mutants/mutmut-cicd-stats.json` (polecenie `mutmut export-cicd-stats`), a nazwy niezabitych mutantów z `mutmut results`. Piaskownica znika po przebiegu, dlatego `wyrok.json` w szczegółach kroku `mutacje` niesie każdego niezabitego mutanta razem z różnicą względem oryginału (`mutmut show`, pierwszych 40) — to materiał dla autora testów i recenzenta.
 
 ## 8. Co z tego wynika dla autora testów
 

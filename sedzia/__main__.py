@@ -20,6 +20,7 @@ from .narzedzia import BladUzycia, BrakNarzedzia, git
 from .sciezki import rozpoznaj_galaz, zmienione
 
 ZNAK = {POZYTYWNY: "[+]", NEGATYWNY: "[-]"}
+ILE_NA_EKRANIE = 12  # wyrok.json zawiera zawsze pełne szczegóły
 
 
 def _numer(tekst: str) -> str:
@@ -120,8 +121,10 @@ def _oglos(k: Kontekst, kroki: list[Krok], czas_s: float) -> bool:
     print(f"Sędzia — tryb: {k.tryb}, zlecenie: {k.zlecenie or '—'}, baza: {k.baza or '—'}, gałąź: {k.galaz or 'HEAD odłączony'}, drzewo robocze: {drzewo}")
     for krok in kroki:
         print(f"  {ZNAK.get(krok.wynik, '[ ]')} {krok.nazwa} — {krok.opis}")
-        for wiersz in krok.szczegoly:
-            print(f"        {wiersz}")
+        for wiersz in krok.szczegoly[:ILE_NA_EKRANIE]:
+            print(f"        {(wiersz.splitlines() or [''])[0]}")
+        if len(krok.szczegoly) > ILE_NA_EKRANIE:
+            print(f"        … i {len(krok.szczegoly) - ILE_NA_EKRANIE} kolejnych — pełna lista w pliku wyroku")
     print(f"WYROK: {'POZYTYWNY' if pozytywny else 'NEGATYWNY'} (czas {czas_s:.0f} s, zapis: {k.plik_wyroku})")
     return pozytywny
 
