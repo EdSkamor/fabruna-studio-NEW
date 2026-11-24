@@ -1,0 +1,12 @@
+# Środowisko i pliki tymczasowe
+.venv/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+*.egg-info/
+build/
+dist/
+
+# Wyniki pracy sędziego i mutmut (nie trafiają do repozytorium)
+wyrok.json
+mutants/

@@ -1,0 +1,43 @@
+# Plik zmienia wyłącznie gałąź typu „zasady” (sędzia odrzuca jego zmianę na gałęziach testy/ i kod/).
+
+[build-system]
+requires = ["setuptools>=77"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "fabruna"
+version = "0.0.0"
+description = "Fabruna Studio — nowe repozytorium; na razie szkielet pętli inżynierskiej"
+readme = "README.md"
+requires-python = ">=3.13"
+dependencies = []
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+# Zależności deweloperskie, przypięte. Instalacja: python -m pip install --group dev
+[dependency-groups]
+dev = [
+    "pytest==9.2.0",
+    "mutmut==3.8.1",
+    "detect-secrets==1.5.0",
+]
+
+[tool.pytest.ini_options]
+minversion = "9.0"
+testpaths = ["testy"]
+pythonpath = ["src"]
+addopts = ["--import-mode=importlib", "--strict-markers", "--strict-config"]
+xfail_strict = true
+markers = [
+    "wolny: test wolny (uruchamia testy mutacyjne); do pominięcia lokalnie: -m \"not wolny\"",
+]
+
+# Ustawienia bazowe mutmut. Sędzia kopiuje tę tabelę do piaskownicy i sam ustawia:
+# source_paths, also_copy, only_mutate (pliki zmienione względem bazy) oraz
+# pytest_add_cli_args_test_selection (testy zlecenia). Wartości poniżej służą
+# ręcznemu uruchomieniu `python -m mutmut run` w katalogu repozytorium.
+[tool.mutmut]
+source_paths = ["src"]
+also_copy = ["testy"]
+pytest_add_cli_args_test_selection = ["testy", "--ignore=testy/sedzia"]
