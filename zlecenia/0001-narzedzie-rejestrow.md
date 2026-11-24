@@ -26,7 +26,10 @@ Funkcje biblioteczne (do testów bez podprocesu):
 
 - `fabruna.rejestry.sprawdz_plik(sciezka, rodzaj, partia=False)` zwraca obiekt wyniku;
 - `fabruna.rejestry.scal_pliki(partie, rodzaj, rejestr=None)` zwraca parę `(wiersze, wynik)`, gdzie `wiersze` to lista słowników w kolejności wyjściowej;
-- obiekt wyniku ma listy `bledy` i `ostrzezenia` (elementy z polami `plik`, `wiersz`, `kolumna`, `opis`) oraz właściwość `poprawny` (prawda, gdy lista błędów jest pusta).
+- obiekt wyniku ma listy `bledy` i `ostrzezenia` (elementy z polami `plik`, `wiersz`, `kolumna`, `opis`) oraz właściwość `poprawny` (prawda, gdy lista błędów jest pusta);
+- `fabruna.rejestry.main(argv=None)` to wejście wiersza poleceń wołane w procesie: przyjmuje listę argumentów bez nazwy programu, pisze na `sys.stdout` i `sys.stderr`, zwraca kod wyjścia jako liczbę i nigdy nie kończy procesu (także przy błędzie użycia zwraca `2`). `python -m fabruna.rejestry` wywołuje `sys.exit(main())`.
+
+Testy wiersza poleceń korzystają głównie z `main(argv)` w procesie, bo kod sprawdzany wyłącznie podprocesem nie liczy się w testach mutacyjnych. Każde polecenie (`sprawdz`, `scal`) ma też co najmniej jeden test przez podproces.
 
 ## Format plików
 
