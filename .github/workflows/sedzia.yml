@@ -1,0 +1,111 @@
+# Sędzia pętli inżynierskiej. Opis: dokumentacja/PETLA_INZYNIERSKA.md.
+#
+# [niesprawdzone] Ten plik nie był jeszcze uruchomiony na GitHubie. Wersje akcji są
+# znacznikami — przy pierwszym wypchnięciu przypiąć każdą pełnym skrótem commita.
+# Skrypty kroków „run” zostały wykonane lokalnie na klonie repozytorium.
+name: sedzia
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+  schedule:
+    - cron: "17 2 * * *" # co noc o 02:17 UTC
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: sedzia-${{ github.event_name }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  # Nazwa zadania „sedzia” jest wymaganym sprawdzeniem w ochronie gałęzi main.
+  sedzia:
+    name: sedzia
+    if: github.event_name == 'pull_request' || github.event_name == 'push'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    steps:
+      - name: Pobranie repozytorium z pełną historią
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Python 3.13
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+
+      - name: Przypięte zależności
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install --group dev
+
+      - name: Sędzia z gałęzi bazowej
+        if: github.event_name == 'pull_request'
+        run: |
+          # Gałąź nie ocenia się własnym sędzią: bierzemy go z bazy.
+          # Wyjątek: baza nie ma jeszcze sędziego (pierwsze wdrożenie szkieletu).
+          if git cat-file -e "origin/${GITHUB_BASE_REF}:sedzia/__main__.py" 2>/dev/null; then
+            mkdir -p "${RUNNER_TEMP}/sedzia-bazy"
+            git archive "origin/${GITHUB_BASE_REF}" sedzia | tar -x -C "${RUNNER_TEMP}/sedzia-bazy"
+            echo "SEDZIA_ZRODLO=${RUNNER_TEMP}/sedzia-bazy" >> "${GITHUB_ENV}"
+          fi
+
+      - name: Wyrok
+        run: |
+          # Opcja -P: katalog roboczy nie trafia na ścieżkę importu, więc o tym,
+          # który sędzia działa, decyduje wyłącznie PYTHONPATH.
+          export PYTHONPATH="${SEDZIA_ZRODLO:-${GITHUB_WORKSPACE}}"
+          if [ "${GITHUB_EVENT_NAME}" = "pull_request" ]; then
+            # Tryb i numer zlecenia sędzia wyznacza z nazwy gałęzi: testy/NNNN-…, kod/NNNN-…, zasady/…
+            python -P -m sedzia galaz "${GITHUB_HEAD_REF}" --baza "origin/${GITHUB_BASE_REF}"
+          else
+            python -P -m sedzia galaz "${GITHUB_REF_NAME}"
+          fi
+
+      - name: Wyrok jako artefakt
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: wyrok
+          path: wyrok.json
+          if-no-files-found: warn
+
+  # Przebieg nocny: cały zestaw testów i testy mutacyjne całego src/.
+  noc:
+    name: noc
+    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 120
+    steps:
+      - name: Pobranie repozytorium z pełną historią
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Python 3.13
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+
+      - name: Przypięte zależności
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install --group dev
+
+      - name: Cały zestaw i mutacje całego src/
+        run: python -m sedzia calosc --mutacje
+
+      - name: Wyrok jako artefakt
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: wyrok-noc
+          path: wyrok.json
+          if-no-files-found: warn
