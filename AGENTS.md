@@ -37,6 +37,7 @@ Usługa liczy próby: gałęzie testów 3, kodu 5 na zlecenie; po limicie odmawi
 
 - Wykonawca nie dotyka `testy/`, `sedzia/`, `.github/`, `zlecenia/`, `dokumentacja/`, `pyproject.toml`, `AGENTS.md`, `.gitignore`, `.secrets.baseline`. Sędzia odrzuca każdą taką zmianę, także niezatwierdzoną i w pliku nieśledzonym.
 - Nikt nie osłabia ani nie usuwa istniejących testów bez osobnej zmiany typu „zasady” i zgody właściciela. Gałąź `testy/…` może wyłącznie dodawać pliki.
+- Kod i testy nie sięgają do procesu, interpretera ani pytest (`atexit`, `os._exit`, `sys.argv`, `sys.modules`, `os.environ`, `importlib`, `eval`/`exec`, dynamiczne `getattr`, hooki pytest) — sędzia odrzuca to w kroku „zakazy” (`sedzia/zakazy.py`). Gałąź `testy/…` i `kod/…` zawiera wyłącznie pliki `.py`.
 - Nikt nie omija bramek: żadnego `pragma: no mutate`, żadnego `pragma: allowlist secret`, żadnego kodu, który rozpoznaje, że jest testowany albo mutowany (odwołania do pytest i mutmut w `src/` sędzia odrzuca).
 - Zmiany sędziego, jego testów, CI, zleceń, dokumentacji i konfiguracji robi tylko sesja prowadząca na gałęzi `zasady/opis`, za zgodą właściciela.
 - W repozytorium nie ma sekretów, danych klientów ani treści fabularnych. Dane w testach są fikcyjne.

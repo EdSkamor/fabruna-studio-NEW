@@ -19,7 +19,9 @@ trap 'rm -rf "$tymczasowy"' EXIT
 id="$(date +%Y%m%d-%H%M%S)-$$"
 git bundle create -q "$tymczasowy/$id.bundle" "refs/heads/$galaz" ^refs/remotes/github/main
 chmod 644 "$tymczasowy/$id.bundle"
-mv "$tymczasowy/$id.bundle" "$kolejka/$id.bundle"
+# Kopia pod ukrytą nazwą, potem zmiana nazwy w obrębie kolejki: usługa nigdy nie widzi niepełnego pliku.
+cp "$tymczasowy/$id.bundle" "$kolejka/.$id.part"
+mv "$kolejka/.$id.part" "$kolejka/$id.bundle"
 echo "Zgłoszono $galaz jako $id. Wynik: $wynik"
 
 [ "$czekaj" = "--czekaj" ] || exit 0

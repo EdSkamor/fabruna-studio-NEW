@@ -7,7 +7,7 @@ import subprocess
 from dataclasses import dataclass, field
 from pathlib import Path
 
-from . import sciezki
+from . import sciezki, zakazy
 from .mutacje import ma_funkcje, mutuj
 from .narzedzia import (
     BladUzycia,
@@ -92,6 +92,24 @@ def ochrona_sciezek(k: Kontekst) -> list[Krok]:
     if not k.galaz:
         opis += "; nazwa gałęzi niesprawdzona (HEAD odłączony)"
     return [_krok("ochrona_sciezek", not naruszenia, opis, {"zmienione": len(k.zmiany), "niedozwolone": len(naruszenia)}, naruszenia)]
+
+
+def zakazane_konstrukcje(k: Kontekst) -> list[Krok]:
+    """Kod gałęzi nie może sięgać do procesu, interpretera ani pytest (rozdział 6 dokumentacji)."""
+    rodzaj, katalog = ("testy", k.testy_zlecenia + "/") if k.tryb == "testy" else ("src", "src/")
+    pliki = [s for s in k.zmiany if s.startswith(katalog)]
+    bledy = zakazy.sprawdz(k.korzen, pliki, rodzaj)
+    opis = (f"konstrukcje, którymi kod mógłby podrobić wyrok (pliki: {len(pliki)}, naruszenia: {len(bledy)})" if bledy
+            else f"brak zakazanych konstrukcji (pliki: {len(pliki)})")
+    return [_krok("zakazy", not bledy, opis, {"pliki": len(pliki), "naruszenia": len(bledy)}, bledy)]
+
+
+def nienaruszalnosc(k: Kontekst) -> Krok:
+    """Po przebiegach repozytorium musi być w tym samym stanie co na starcie (testy niczego nie podrzuciły)."""
+    teraz = sciezki.zmienione(k.korzen, k.baza)
+    rozne = sorted(s for s in set(teraz) | set(k.zmiany) if teraz.get(s) != k.zmiany.get(s))
+    opis = "przebiegi zmieniły repozytorium (pliki dopisane, zmienione albo usunięte w trakcie oceny)" if rozne else "repozytorium bez zmian po przebiegach"
+    return _krok("nienaruszalnosc", not rozne, opis, {"zmienione_w_trakcie": len(rozne)}, rozne)
 
 
 def zbieranie(k: Kontekst) -> list[Krok]:
@@ -224,18 +242,20 @@ def mutacje(k: Kontekst) -> list[Krok]:
         if not ma_funkcje(k.korzen / "src"):
             return [_krok("mutacje", True, "w src/ nie ma jeszcze żadnej funkcji — nie ma czego mutować", {"wszystkie": 0})]
         return [_krok("mutacje", *mutuj(k.korzen, None, "testy", k.prog))]
+    pyproject = git(k.korzen, "show", f"{k.baza_commit}:pyproject.toml")  # konfiguracja z bazy, nie z drzewa po testach
     w_src = [s for s in k.zmiany if s.startswith("src/")]
     pliki = [s for s in w_src if s.endswith(".py") and (k.korzen / s).is_file()]
     if not pliki:
         opis = f"brak plików .py do mutowania wśród zmian w src/ (zmienione ścieżki w src/: {len(w_src)})"
         return [_krok("mutacje", False, opis, {"wszystkie": 0})]
-    return [_krok("mutacje", *mutuj(k.korzen, pliki, k.testy_zlecenia, k.prog))]
+    return [_krok("mutacje", *mutuj(k.korzen, pliki, k.testy_zlecenia, k.prog, pyproject))]
 
 
 # Tryb → kroki (nazwa, funkcja, czy kosztowny). Krok kosztowny jest pomijany po wcześniejszym negatywnym.
 TRYBY = {
     "testy": [
         ("ochrona_sciezek", ochrona_sciezek, False),
+        ("zakazy", zakazane_konstrukcje, False),
         ("zbieranie_testow", zbieranie, False),
         ("pokrycie_kryteriow", pokrycie_kryteriow, False),
         ("czerwone_na_bazie", czerwone_i_stabilne, False),
@@ -243,6 +263,7 @@ TRYBY = {
     ],
     "kod": [
         ("ochrona_sciezek", ochrona_sciezek, False),
+        ("zakazy", zakazane_konstrukcje, False),
         ("testy_zlecenia", testy_zlecenia, False),
         ("caly_zestaw", caly_zestaw, False),
         ("sekrety", sekrety, False),
@@ -267,4 +288,6 @@ def wykonaj(k: Kontekst) -> list[Krok]:
             kroki.append(Krok(nazwa, NEGATYWNY, f"brak wymaganego narzędzia: {blad} — zainstaluj przypięte zależności (README.md)"))
         except subprocess.TimeoutExpired as blad:
             kroki.append(Krok(nazwa, NEGATYWNY, f"przekroczony limit czasu {blad.timeout:g} s"))
+    if k.tryb in ("testy", "kod"):
+        kroki.append(nienaruszalnosc(k))
     return kroki

@@ -82,10 +82,14 @@ def zbuduj(galaz: str, pr: str, baza: str) -> tuple[str, str]:
     diff = git("diff", "--no-renames", "--no-color", f"{baza}...{pr}")
     zmienione = [p for p in git("diff", "--no-renames", "--name-only", f"{baza}...{pr}").splitlines() if p]
     czesci.append(sekcja("różnice gałęzi względem main", diff))
+    usuniete = set(git("diff", "--no-renames", "--name-only", "--diff-filter=D", f"{baza}...{pr}").split())
     for sciezka in zmienione:
+        if sciezka in usuniete:
+            continue
         tekst = zawartosc(pr, sciezka)
-        if tekst is not None:
-            czesci.append(sekcja(f"plik po zmianie: {sciezka}", tekst))
+        if tekst is None:
+            raise ValueError(f"plik {sciezka} jest binarny albo nieczytelny — recenzent go nie zobaczy, więc zmiana jest odrzucana")
+        czesci.append(sekcja(f"plik po zmianie: {sciezka}", tekst))
     kontekst = pliki_pod(baza, "src") if tryb == "testy" else pliki_pod(baza, f"testy/zlecenie_{numer}") if tryb == "kod" else []
     for sciezka in kontekst:
         if sciezka not in zmienione and sciezka.endswith(".py"):

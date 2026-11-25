@@ -66,6 +66,8 @@ Reguły ogólne:
 
 ## 6. Bramki
 
+W trybach „testy” i „kod” dochodzą dwa kroki: „zakazy” (statyczny zakaz konstrukcji, którymi kod pod testem mógłby podrobić wyrok — lista w `sedzia/zakazy.py` i w rozdziale 12) przed uruchomieniem czegokolwiek oraz „nienaruszalnosc” na końcu (stan repozytorium po przebiegach taki sam jak na starcie).
+
 ### Tryb „testy” (autor testów oddał testy, kodu jeszcze nie ma)
 
 | Krok | Wynik pozytywny, gdy |
@@ -166,7 +168,12 @@ Cel: właściciel nie zatwierdza każdego kroku, a żadna sesja AI nie może obe
 
 **Znane ograniczenia.**
 - [niesprawdzone do pierwszego przebiegu] wymagane sprawdzenie z `pull_request_target`, automatyczne scalenie przez token fine-grained, wersja `@anthropic-ai/claude-code@2.1.332` w npm, powiadomienia e-mail.
-- Zgoda dwóch modeli nie jest dowodem: recenzja jest dodatkową bramką, nie zastępuje sędziego. Prompt injection może osłabić recenzję; deterministyczne bramki (ścieżki, testy, mutacje) działają niezależnie od niej.
+- Zgoda dwóch modeli nie jest dowodem: recenzja jest dodatkową bramką, nie zastępuje sędziego.
+- Kod pod testem działa w procesie pytest, więc teoretycznie może podrobić raport. Sędzia odrzuca statycznie znane drogi (krok „zakazy”, `sedzia/zakazy.py`: `atexit`, `os._exit`, `sys.argv`, `sys.modules`, `os.environ`, `importlib`, `ctypes`, `eval`/`exec`, dynamiczne `getattr`, hooki i obiekty pytest w testach, napisy w rodzaju „MUTANT”/„junit”), uruchamia narzędzia z `python -I`, bierze konfigurację mutmut z bazy i po przebiegach sprawdza, że repozytorium się nie zmieniło (krok „nienaruszalnosc”). Statyczne zakazy w Pythonie nie są pełną piaskownicą — obejście, którego nie przewidziano, może wykryć tylko recenzja. Prompt injection może osłabić recenzję, ale tekst skierowany do recenzenta jest powodem odrzucenia.
+- Na PC sędzia działa na Pythonie 3.14, w CI na 3.13 — wyroki mogą się różnić; wiążące jest sprawdzenie „sedzia” w CI.
+- Reguła nie wymaga gałęzi aktualnej względem `main`; połączenie zmian sprawdza dopiero przebieg na `main` i nocny. [propozycja] kolejka scalania (merge queue).
 - Ucieczka z piaskownicy bwrap dałaby dostęp do tokenu konta `sedzia`; token nie może jednak zmienić przepływów CI ani reguł ochrony.
 - Zmiany `.github/` wprowadza wyłącznie właściciel (edytor GitHuba albo własny klucz poza zasięgiem sesji AI).
+- Pull request z rozwidlenia dostaje czerwone „recenzja” (jawny błąd, nie pominięcie). Jego własny `sedzia.yml` może jednak dać zielone „sedzia” — takich pull requestów nie scala się bez przeglądu; w ustawieniach Actions: zatwierdzanie przebiegów dla wszystkich spoza repozytorium.
+- Usługa przepuszcza w `src/` i w testach zlecenia wyłącznie pliki `.py`; recenzja odrzuca każdy plik binarny. Zgłoszenia limitu liczą się tylko, gdy założył je github-actions, a licznik zeruje zamknięcie przez właściciela.
 - Przeglądarka, w której właściciel jest zalogowany do GitHuba, nie może być używana przez sesje AI do działań w repozytorium.

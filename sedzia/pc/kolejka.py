@@ -29,6 +29,7 @@ import json
 import os
 import re
 import shutil
+import stat
 import subprocess
 import sys
 import time
@@ -61,6 +62,7 @@ _OPIS = r"[a-z0-9][a-z0-9-]{0,60}"
 WZORZEC_GALEZI = re.compile(rf"(?P<tryb>testy|kod)/(?P<numer>\d{{4}})-{_OPIS}|(?P<zasady>zasady)/{_OPIS}")
 SHA = re.compile(r"[0-9a-f]{40}")
 TRYBY_AUTOSCALANIA = ("testy", "kod")
+BOT = "github-actions[bot]"
 
 
 # ---------------------------------------------------------------- reguły (czyste funkcje, testowane)
@@ -116,11 +118,15 @@ def naruszenia(tryb: str, numer: str | None, raw: str) -> list[str]:
         if tryb == "testy":
             if not sciezka.startswith(f"testy/zlecenie_{numer}/"):
                 bledy.append(f"{sciezka}: poza testy/zlecenie_{numer}/")
+            elif not sciezka.endswith(".py"):
+                bledy.append(f"{sciezka}: gałąź testów dodaje tylko pliki .py (dane testowe buduje się w testach)")
             elif status != "A":
                 bledy.append(f"{sciezka}: gałąź testów może tylko dodawać pliki (status {status})")
         elif tryb == "kod":
             if not sciezka.startswith("src/"):
                 bledy.append(f"{sciezka}: poza src/")
+            elif not sciezka.endswith(".py"):
+                bledy.append(f"{sciezka}: w src/ dozwolone są tylko pliki .py")
         elif tryb == "zasady":
             if sciezka.startswith("src/") and not sciezka.endswith("/__init__.py"):
                 bledy.append(f"{sciezka}: kod wchodzi wyłącznie gałęzią kod/NNNN-opis")
@@ -187,7 +193,8 @@ def _zglos_problem(tytul: str, tresc: str) -> None:
 
 def _otwarte_zgloszenie(tytul: str) -> bool:
     try:
-        return any(z.get("title") == tytul for z in _api("GET", f"/repos/{REPO}/issues?state=open&per_page=100") or [])
+        return any(z.get("title") == tytul and (z.get("user") or {}).get("login") == BOT
+                   for z in _api("GET", f"/repos/{REPO}/issues?state=open&per_page=100") or [])
     except Exception:  # noqa: BLE001
         return False
 
@@ -208,7 +215,7 @@ def _zapisz_wynik(galaz: str, tekst: str) -> None:
 # ---------------------------------------------------------------- limit prób
 
 def _klucz(tryb: str, numer: str | None, galaz: str) -> str:
-    return f"{tryb}-{numer}" if numer else f"zasady-{galaz.split('/', 1)[1]}"
+    return f"{tryb}-{numer}" if numer else f"zasady-{time.strftime('%Y%m%d')}"  # zasady: wspólny limit dzienny
 
 
 def _tytul_limitu(klucz: str) -> str:
@@ -224,7 +231,10 @@ def _sprawdz_limit(tryb: str, klucz: str) -> str | None:
     try:
         zgloszenia = _api("GET", f"/repos/{REPO}/issues?state=closed&per_page=100&sort=updated", uwierzytelnij=True)
         for z in zgloszenia or []:
-            if z.get("title") == _tytul_limitu(klucz) and z.get("closed_at"):
+            if z.get("title") == _tytul_limitu(klucz) and z.get("closed_at") and (z.get("user") or {}).get("login") == BOT:
+                szczegoly = _api("GET", f"/repos/{REPO}/issues/{int(z['number'])}")
+                if ((szczegoly or {}).get("closed_by") or {}).get("login") != WLASCICIEL:
+                    continue  # licznik zeruje wyłącznie właściciel
                 zamkniete = calendar.timegm(time.strptime(z["closed_at"], "%Y-%m-%dT%H:%M:%SZ"))
                 if zamkniete > stan.get("ostatnia", 0):
                     plik.write_text(json.dumps({"proby": 0, "od": time.time()}), "utf-8")
@@ -254,10 +264,15 @@ def _zaleznosci(czysty: Path, katalog: Path) -> None:
         return
     katalog.mkdir(parents=True, exist_ok=True)
     (katalog / "pyproject.toml").write_text(pyproject, "utf-8")
+    # pip pobiera i buduje pakiety, więc działa w piaskownicy: z siecią, ale bez /home (token) i bez reszty /srv.
     proces = subprocess.run(
-        [str(VENV / "bin/python"), "-I", "-m", "pip", "install", "-q", "--disable-pip-version-check", "--group", "dev"],
-        cwd=katalog, capture_output=True, text=True, timeout=1800, check=False,
-        env={"PATH": "/usr/bin:/bin", "HOME": str(DOM), "LANG": "C.UTF-8"},
+        ["bwrap", "--unshare-all", "--share-net", "--die-with-parent", "--new-session",
+         "--ro-bind", "/", "/", "--dev", "/dev", "--proc", "/proc", "--tmpfs", "/tmp", "--tmpfs", "/run",
+         "--tmpfs", "/home", "--tmpfs", "/srv", "--tmpfs", "/root", "--ro-bind", "/run/systemd/resolve", "/run/systemd/resolve",
+         "--bind", str(VENV), str(VENV), "--ro-bind", str(katalog), str(katalog), "--chdir", str(katalog),
+         "--clearenv", "--setenv", "PATH", "/usr/bin:/bin", "--setenv", "HOME", "/tmp", "--setenv", "LANG", "C.UTF-8",
+         str(VENV / "bin/python"), "-I", "-m", "pip", "install", "-q", "--disable-pip-version-check", "--no-cache-dir", "--group", "dev"],
+        capture_output=True, text=True, timeout=1800, check=False,
     )
     if proces.returncode != 0:
         raise RuntimeError(f"instalacja zależności z main:pyproject.toml nie powiodła się: {proces.stderr[-800:]}")
@@ -292,8 +307,9 @@ def _piaskownica(repo: Path, sedzia: Path, galaz: str) -> subprocess.CompletedPr
 def _usun(sciezka: Path) -> None:
     def napraw(funkcja, cel, _blad):
         try:
-            os.chmod(os.path.dirname(cel), 0o700)
-            os.chmod(cel, 0o700)
+            for sciezka in (os.path.dirname(cel), cel):
+                if not os.path.islink(sciezka) and os.path.isdir(sciezka):
+                    os.chmod(sciezka, 0o700)  # tylko katalogi i nigdy cel dowiązania
             funkcja(cel)
         except OSError:
             pass
@@ -331,6 +347,26 @@ def _pull_request(galaz: str, tryb: str, numer: str | None, wyjscie: str) -> str
 
 # ---------------------------------------------------------------- jedno zgłoszenie
 
+def _skopiuj_zgloszenie(plik: Path, cel: Path) -> None:
+    """Kopia bez podążania za dowiązaniem, tylko zwykły plik, z limitem rozmiaru."""
+    try:
+        zrodlo = os.open(plik, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK)
+    except OSError as blad:
+        raise ValueError(f"nie da się otworzyć zgłoszenia: {blad}") from None
+    try:
+        if not stat.S_ISREG(os.fstat(zrodlo).st_mode):
+            raise ValueError("zgłoszenie nie jest zwykłym plikiem")
+        with open(cel, "wb") as wyjscie:
+            razem = 0
+            while blok := os.read(zrodlo, 1 << 20):
+                razem += len(blok)
+                if razem > MAX_ROZMIAR:
+                    raise ValueError("plik zgłoszenia jest za duży")
+                wyjscie.write(blok)
+    finally:
+        os.close(zrodlo)
+
+
 def obsluz(plik: Path) -> None:
     identyfikator = plik.stem
     praca = PRACA / identyfikator
@@ -339,18 +375,16 @@ def obsluz(plik: Path) -> None:
         _usun(praca)
     praca.mkdir(parents=True)
     try:
-        if plik.is_symlink() or not plik.is_file():
-            raise ValueError("zgłoszenie nie jest zwykłym plikiem")
-        if plik.stat().st_size > MAX_ROZMIAR:
-            raise ValueError("plik zgłoszenia jest za duży")
         pakiet = praca / "zgloszenie.bundle"
-        shutil.copyfile(plik, pakiet, follow_symlinks=False)
-        plik.unlink()
+        _skopiuj_zgloszenie(plik, pakiet)
 
         czysty = praca / "czysty.git"
         _git("init", "-q", "--bare", "-b", "main", str(czysty))
         _git("fetch", "-q", "--no-tags", URL, "+refs/heads/main:refs/heads/main", katalog=czysty)
-        glowy = glowy_pakietu(_git("bundle", "list-heads", str(pakiet), katalog=czysty))
+        try:
+            glowy = glowy_pakietu(_git("bundle", "list-heads", str(pakiet), katalog=czysty))
+        except RuntimeError as blad:
+            raise ValueError(f"nieczytelny plik git bundle: {blad}") from None
         if len(glowy) != 1 or not glowy[0][1].startswith("refs/heads/"):
             raise ValueError("zgłoszenie musi zawierać dokładnie jedną gałąź (refs/heads/…)")
         sha, ref = glowy[0]
@@ -372,7 +406,10 @@ def obsluz(plik: Path) -> None:
             return
         proba = _policz_probe(tryb, klucz)
 
-        _git("fetch", "-q", str(pakiet), f"+{ref}:{ref}", katalog=czysty)
+        try:
+            _git("fetch", "-q", str(pakiet), f"+{ref}:{ref}", katalog=czysty)
+        except RuntimeError as blad:
+            raise ValueError(f"nie da się pobrać gałęzi z pakietu (czy odchodzi od aktualnego main?): {blad}") from None
         if _git("rev-parse", f"{ref}^{{commit}}", katalog=czysty).strip() != sha:
             raise ValueError("commit w pakiecie nie zgadza się z listą referencji")
         ile = int(_git("rev-list", "--count", f"main..{sha}", katalog=czysty).strip())
@@ -423,7 +460,10 @@ def obsluz(plik: Path) -> None:
         if not isinstance(blad, ValueError):
             _zglos_problem(f"[sędzia] Błąd usługi przy {galaz}", f"```\n{traceback.format_exc()[-4000:]}\n```")
     finally:
-        plik.unlink(missing_ok=True)
+        try:
+            plik.unlink(missing_ok=True)
+        except OSError:
+            pass
         _usun(praca)
 
 
@@ -434,16 +474,37 @@ def main() -> int:
         fcntl.flock(blokada, fcntl.LOCK_EX)
         while True:
             teraz = time.time()
-            pliki = sorted(KOLEJKA.iterdir(), key=lambda p: p.lstat().st_mtime)
-            gotowe = [p for p in pliki if p.name.endswith(".bundle") and not p.name.startswith(".")]
-            for inny in pliki:
-                if inny not in gotowe and teraz - inny.lstat().st_mtime > PROG_PLIKU_PART_S:
-                    inny.unlink(missing_ok=True)  # porzucone pliki tymczasowe
+            wpisy = []
+            for p in KOLEJKA.iterdir():
+                try:
+                    st = p.lstat()
+                except OSError:
+                    continue  # znikł w międzyczasie
+                if stat.S_ISDIR(st.st_mode):
+                    continue  # katalogi pomijamy (nie da się ich bezpiecznie usunąć)
+                wiek = teraz - st.st_mtime
+                if wiek > PROG_PLIKU_PART_S or wiek < -60:  # porzucony albo z datą z przyszłości
+                    if not p.name.endswith(".bundle") or wiek < -60:
+                        try:
+                            p.unlink()
+                        except OSError:
+                            pass
+                        continue
+                wpisy.append((st.st_mtime, p))
+            wpisy.sort()
+            gotowe = [p for _, p in wpisy if p.name.endswith(".bundle") and not p.name.startswith(".")]
             if gotowe:
-                obsluz(gotowe[0])
+                try:
+                    obsluz(gotowe[0])
+                except Exception as blad:  # noqa: BLE001 — jedno zgłoszenie nie zatrzymuje kolejki
+                    _dziennik(f"{gotowe[0].name}: nieobsłużony błąd {blad}")
+                    try:
+                        gotowe[0].unlink()
+                    except OSError:
+                        return 1
                 continue
-            if any(teraz - p.lstat().st_mtime <= PROG_PLIKU_PART_S for p in pliki):
-                time.sleep(5)  # trwa zapis zgłoszenia
+            if wpisy:
+                time.sleep(5)  # trwa zapis zgłoszenia (.part)
                 continue
             return 0
 
