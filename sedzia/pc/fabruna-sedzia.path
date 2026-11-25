@@ -1,0 +1,10 @@
+# SZKIC AI — do pracy autora.
+[Unit]
+Description=Sędzia Fabruna: nowe zgłoszenie w kolejce
+
+[Path]
+DirectoryNotEmpty=/srv/sedzia/kolejka
+Unit=fabruna-sedzia.service
+
+[Install]
+WantedBy=multi-user.target

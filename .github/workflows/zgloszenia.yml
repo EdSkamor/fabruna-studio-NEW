@@ -1,0 +1,23 @@
+# Zgłoszenia problemów od usługi sędziego na PC (limit prób, błąd usługi).
+# SZKIC AI — do pracy autora.
+# Zgłoszenie zakłada github-actions, więc właściciel dostaje powiadomienie e-mailem.
+name: zgloszenia
+
+on:
+  repository_dispatch:
+    types: [problem]
+
+permissions:
+  issues: write
+
+jobs:
+  zgloszenie:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - name: Zgłoszenie
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TYTUL: ${{ github.event.client_payload.tytul }}
+          TRESC: ${{ github.event.client_payload.tresc }}
+        run: gh issue create --repo "${GITHUB_REPOSITORY}" --title "${TYTUL}" --body "${TRESC}"

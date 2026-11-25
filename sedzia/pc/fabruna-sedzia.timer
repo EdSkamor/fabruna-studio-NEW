@@ -1,0 +1,10 @@
+# SZKIC AI — do pracy autora. Zabezpieczenie, gdyby jednostka .path nie zadziałała.
+[Unit]
+Description=Sędzia Fabruna: okresowe sprawdzenie kolejki
+
+[Timer]
+OnBootSec=5min
+OnUnitInactiveSec=15min
+
+[Install]
+WantedBy=timers.target

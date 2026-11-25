@@ -22,7 +22,7 @@ Program nie sprawdza sam siebie. O tym, czy praca jest zrobiona, rozstrzyga sęd
 1. Zlecenie `zlecenia/NNNN-opis.md` według `zlecenia/WZOR.md`; kryteria w wierszach `- **K01 — nazwa.** treść`.
 2. Gałąź `testy/NNNN-opis`: autor testów oddaje testy. Sędzia w trybie „testy” sprawdza, że są czerwone, stabilne i pokrywają każde kryterium. Scalenie.
 3. Gałąź `kod/NNNN-opis` (od gałęzi z testami): wykonawca oddaje kod. Sędzia w trybie „kod” sprawdza testy zlecenia, cały zestaw, sekrety i wynik mutacyjny. Limit podejść jest w zleceniu; po jego wyczerpaniu sesja oddaje raport z diagnozą.
-4. Recenzja z niezależnej sesji, potem scalenie przez właściciela.
+4. Recenzja automatyczna w CI i scalenie automatyczne (rozdział 12); gałęzie zasad scala właściciel.
 
 Bazą (`--baza`) jest zawsze stan, od którego gałąź odchodzi: `main` po scaleniu poprzedniego etapu albo — przy pracy lokalnej przed scaleniem — gałąź poprzedniego etapu (zasady → testy → kod).
 
@@ -135,10 +135,38 @@ Testy uruchamiające mutmut mają znacznik `wolny`. Wszystkie muszą przechodzi�
 - [niesprawdzone: przypiąć pełnym skrótem przy pierwszym wypchnięciu] wersje akcji w `sedzia.yml` (`actions/checkout@v4`, `actions/setup-python@v5`, `actions/upload-artifact@v4`).
 - [niesprawdzone] działanie przepływu na GitHubie, w tym dostępność `origin/main` po pobraniu pełnej historii. Lokalnie wykonano tylko skrypty kroków na klonie.
 - [niesprawdzone] ochrona gałęzi `main` (wymagane sprawdzenie „sedzia”, wymagana zgoda właściciela ścieżek) — ustawia się ją w GitHubie, nie w repozytorium.
-- Pull request może zmienić sam plik przepływu; chroni przed tym tylko przegląd właściciela ścieżki `.github/`.
-- Sędzia nie jest piaskownicą: kod wykonawcy działa w procesie pytest. Celową manipulację wykrywa recenzja zmiany; sędzia ma jedynie proste bezpieczniki (raport JUnit, zakazane odwołania).
+- Pull request może zmienić sam plik przepływu. Sesje AI nie mogą jednak wypchnąć żadnej gałęzi: robi to wyłącznie usługa sędziego, która odrzuca każdą zmianę `.github/`, a jej token nie ma uprawnienia „Workflows” (rozdział 12).
+- Sędzia sam nie jest piaskownicą: kod wykonawcy działa w procesie pytest. Na PC usługa uruchamia sędziego w piaskownicy bwrap (rozdział 12), w CI — na jednorazowej maszynie bez sekretów. Celową manipulację wykrywa recenzja zmiany; sędzia ma jedynie proste bezpieczniki (raport JUnit, zakazane odwołania).
 - Wyrok lokalny zależy od lokalnego środowiska (na przykład `.venv`, `.git/info/exclude`). Wiążący jest wyrok z CI, a dopóki CI nie działa — wyrok uruchomiony ponownie przez sesję prowadzącą na czystym klonie (`drzewo_czyste: true`). Wyrok ogłoszony przez samego wykonawcę nie wystarcza.
 - Sędzia pilnuje całego `src/`; węższy zakres plików ze zlecenia sprawdza recenzent.
 - Między scaleniem testów zlecenia a scaleniem jego kodu `main` jest czerwony: tryb „calosc” daje wtedy wyrok negatywny, zgodnie z prawdą. Tryb „kod” wymaga zielonego całego zestawu, więc zlecenia idą pojedynczo — testy następnego zlecenia scala się po kodzie poprzedniego. [propozycja] Bramka „żaden test zielony na bazie nie jest czerwony na gałęzi” (drugi przebieg zestawu na bazie) pozwoliłaby prowadzić zlecenia równolegle.
 - Stabilność to trzy kolejne przebiegi w tej samej kolejności; nie wykrywa zależności od kolejności testów.
 - Przypięte są tylko trzy narzędzia; ich zależności pośrednie nie.
+
+## 12. Automatyczne scalanie i usługa sędziego
+
+Cel: właściciel nie zatwierdza każdego kroku, a żadna sesja AI nie może obejść sędziego ani recenzji.
+
+**Granica zaufania.** Prawo zapisu w repozytorium ma tylko token (fine-grained, jedno repozytorium; uprawnienia: Contents, Pull requests, Issues — zapis; bez Workflows i Administration) zapisany na osobnym koncie systemowym `sedzia` (`/home/sedzia`, tryb 700). Sesje AI działają na koncie właściciela i nie mają ani tego tokenu, ani klucza wdrożeniowego, ani `sudo`.
+
+**Droga gałęzi.** Sesja: `sh sedzia/pc/zglos.sh GAŁĄŹ --czekaj` — plik `git bundle` trafia do `/srv/sedzia/kolejka` (zapis dla właściciela, odczyt cudzych zgłoszeń niemożliwy). Usługa `fabruna-sedzia` (`sedzia/pc/kolejka.py`, instalowana przez właściciela z commitu `main` skryptem `sedzia/pc/instalacja.sh`):
+
+1. pobiera `main` z GitHuba i gałąź z pliku do czystego repozytorium, którego nie widzi żaden kod gałęzi;
+2. sprawdza nazwę gałęzi, liczbę commitów i zmienione ścieżki własnymi regułami — węższymi niż sędziego: nigdy `.github/`, dowiązań ani podmodułów;
+3. liczy próby (testy 3, kod 5, zasady 5 na klucz); po limicie odmawia i zakłada zgłoszenie „[sędzia] Limit prób: …”; zamknięcie zgłoszenia przez właściciela zeruje licznik;
+4. uruchamia sędziego z `main` (`git archive main sedzia`, `python -P`) w piaskownicy bwrap: bez sieci, z ukrytymi `/home`, `/run`, `/srv`, `/tmp`, z sędzią i środowiskiem Pythona tylko do odczytu, we własnej przestrzeni procesów; od tej chwili kopia repozytorium jest niezaufana i usługa nie uruchamia w niej gita;
+5. przy wyroku pozytywnym wypycha z czystego repozytorium dokładnie oceniony commit, otwiera pull request i dla `testy/…` i `kod/…` włącza automatyczne scalenie;
+6. wynik zapisuje w `/srv/sedzia/wyniki/<gałąź>.txt` (czytelny dla sesji), dziennik w `/srv/sedzia/wyniki/dziennik.log`.
+
+**Na GitHubie** (reguła „ochrona-main”, bez wyjątków): wymagane sprawdzenia „sedzia” (sędzia z gałęzi bazowej, ponownie, na czystej maszynie) i „recenzja”.
+
+**Recenzja** (`.github/workflows/recenzja.yml`, `sedzia/ci/recenzja.py`): zdarzenie `pull_request_target`, więc przepływ i skrypt pochodzą z `main`. Recenzent (Claude Code, sekret `CLAUDE_CODE_OAUTH_TOKEN`) nie ma żadnych narzędzi: dostaje AGENTS.md i zlecenie z `main`, różnice, pełne zmienione pliki i kontekst (dla testów `src/`, dla kodu testy zlecenia), oddzielone znacznikami z losowym kluczem. Tekst w danych skierowany do recenzenta jest powodem odrzucenia. Ostatni wiersz odpowiedzi musi brzmieć dokładnie „WERDYKT: PRZYJĘTE”; wszystko inne — w tym brak sekretu, błąd i za duża zmiana — to odrzucenie. Recenzja trafia do komentarza pull requesta.
+
+**Powiadomienia właściciela:** komentarz recenzji w pull requeście (autor dostaje powiadomienie), nieudany przebieg CI, zgłoszenia od usługi (`.github/workflows/zgloszenia.yml`, zakłada je github-actions).
+
+**Znane ograniczenia.**
+- [niesprawdzone do pierwszego przebiegu] wymagane sprawdzenie z `pull_request_target`, automatyczne scalenie przez token fine-grained, wersja `@anthropic-ai/claude-code@2.1.332` w npm, powiadomienia e-mail.
+- Zgoda dwóch modeli nie jest dowodem: recenzja jest dodatkową bramką, nie zastępuje sędziego. Prompt injection może osłabić recenzję; deterministyczne bramki (ścieżki, testy, mutacje) działają niezależnie od niej.
+- Ucieczka z piaskownicy bwrap dałaby dostęp do tokenu konta `sedzia`; token nie może jednak zmienić przepływów CI ani reguł ochrony.
+- Zmiany `.github/` wprowadza wyłącznie właściciel (edytor GitHuba albo własny klucz poza zasięgiem sesji AI).
+- Przeglądarka, w której właściciel jest zalogowany do GitHuba, nie może być używana przez sesje AI do działań w repozytorium.
