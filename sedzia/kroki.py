@@ -248,7 +248,9 @@ def mutacje(k: Kontekst) -> list[Krok]:
     if not pliki:
         opis = f"brak plików .py do mutowania wśród zmian w src/ (zmienione ścieżki w src/: {len(w_src)})"
         return [_krok("mutacje", False, opis, {"wszystkie": 0})]
-    return [_krok("mutacje", *mutuj(k.korzen, pliki, k.testy_zlecenia, k.prog, pyproject))]
+    # Testy wszystkich zleceń (testy/ bez testy/sedzia): zlecenie poprawek zmienia funkcje opisane przez wcześniejsze
+    # zlecenia, a mutmut mutuje cały zmieniony plik — same testy bieżącego zlecenia nie zabiją mutantów starej logiki.
+    return [_krok("mutacje", *mutuj(k.korzen, pliki, "testy", k.prog, pyproject))]
 
 
 # Tryb → kroki (nazwa, funkcja, czy kosztowny). Krok kosztowny jest pomijany po wcześniejszym negatywnym.
