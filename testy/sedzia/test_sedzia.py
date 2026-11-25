@@ -244,7 +244,7 @@ def test_j_regresja_poza_zleceniem(repo):
 
 @pytest.mark.wolny
 def test_k_slabe_testy_wynik_mutacyjny_ponizej_progu(repo):
-    # Mocne testy spoza zlecenia nie mogą podnieść wyniku: liczą się wyłącznie testy zlecenia.
+    # Mocne testy spoza katalogów zleceń nie mogą podnieść wyniku: liczą się wyłącznie testy zleceń.
     repo.zapisz("testy/inne/test_mocne.py", TESTY_DOBRE)
     galaz_kodu(repo, testy=TESTY_SLABE)
     wynik = repo.sedzia(*KOD)
