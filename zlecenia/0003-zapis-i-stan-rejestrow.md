@@ -36,3 +36,7 @@ Scalenie tego zlecenia oznacza przyjęcie **[propozycja]**:
 
 1. K02 — zapis przez dowiązanie (zmienia się plik docelowy, dowiązanie zostaje), zamiast zastępowania dowiązania zwykłym plikiem.
 2. K05 — nieoczekiwany `ValueError` kończy program śladem stosu zamiast kodem `2`: błąd w programie ma być widoczny, nie udawać błędu użytkownika.
+
+## Wstrzymanie testów (25.11.2026)
+
+Testy tego zlecenia (PR #9) są tymczasowo wycofane z `main` decyzją sesji prowadzącej, do zatwierdzenia przez właściciela. Powód: wykonawca nie mógł przejść kroku `mutacje`, bo sędzia liczył wynik wyłącznie testami bieżącego zlecenia. Zlecenie poprawek zmienia jednak plik `rdzen.py`, którego wcześniejszą logikę opisują testy zleceń 0001 i 0002, a mutmut mutuje cały zmieniony plik (wynik 56,1% przy progu 70%). Poprawka sędziego idzie osobną gałęzią `zasady/…`. Kolejka i CI oceniają ją sędzią z `main`, a ten przy czerwonym `main` (testy bez kodu) odrzuca każdą zmianę zasad. Dlatego najpierw `main` wraca do stanu zielonego. Po scaleniu poprawki sędziego te same testy wracają gałęzią `testy/0003-…` (bez zmian treści), a potem idzie kod.
