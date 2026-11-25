@@ -64,8 +64,8 @@ def _toml(tabele: dict[str, dict]) -> str:
     return "\n".join(wiersze)
 
 
-def mutuj(korzen: Path, pliki: list[str] | None, testy: str, prog: float, pyproject: str | None = None) -> tuple[bool, str, dict, list[str]]:
-    """Mutuje podane pliki (None = całe src/) i sprawdza je testami `testy`; zwraca (dobrze, opis, liczby, szczegóły)."""
+def mutuj(korzen: Path, pliki: list[str] | None, testy: str | list[str], prog: float, pyproject: str | None = None) -> tuple[bool, str, dict, list[str]]:
+    """Mutuje podane pliki (None = całe src/) i sprawdza je testami `testy` (katalog albo lista); zwraca (dobrze, opis, liczby, szczegóły)."""
     mutowane = pliki if pliki is not None else [p.relative_to(korzen).as_posix() for p in sorted((korzen / "src").rglob("*.py"))]
     odwolania = _odwolania(korzen, mutowane)
     if odwolania:
@@ -78,7 +78,7 @@ def mutuj(korzen: Path, pliki: list[str] | None, testy: str, prog: float, pyproj
         **narzedzia.get("mutmut", {}),
         "source_paths": ["src"],
         "also_copy": ["testy"],
-        "pytest_add_cli_args_test_selection": [testy],
+        "pytest_add_cli_args_test_selection": [testy] if isinstance(testy, str) else list(testy),
     }
     ustawienia.pop("only_mutate", None)
     if pliki is not None:
@@ -133,6 +133,6 @@ def mutuj(korzen: Path, pliki: list[str] | None, testy: str, prog: float, pyproj
     opis = (
         f"wynik mutacyjny {procent}% {porownanie} próg {prog:g}% — zabite {liczby['zabite']}, "
         f"przekroczony czas {liczby['przekroczony_czas']}, ocalałe {liczby['ocalale']}, bez testu {liczby['bez_testu']}, "
-        f"pominięte {liczby['pominiete']}, wszystkie {liczby['wszystkie']}; testy: {testy}"
+        f"pominięte {liczby['pominiete']}, wszystkie {liczby['wszystkie']}; testy: {testy if isinstance(testy, str) else ', '.join(testy)}"
     )
     return wynik >= prog, opis, liczby, niezabite
