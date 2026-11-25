@@ -265,6 +265,15 @@ def test_k_slabe_testy_wynik_mutacyjny_ponizej_progu(repo):
     assert nizszy.kod == 0, nizszy.wyjscie
 
 
+def test_k_testy_innego_zlecenia_licza_sie_do_mutacji(repo):
+    # Zlecenie poprawek zmienia kod opisany testami wcześniejszego zlecenia: te testy zabijają mutanty starej logiki.
+    repo.zapisz("testy/zlecenie_0000/test_mocne.py", TESTY_DOBRE)
+    galaz_kodu(repo, testy=TESTY_SLABE)
+    wynik = repo.sedzia(*KOD)
+    assert wynik.kod == 0, wynik.wyjscie
+    assert "testy: testy/zlecenie_0000, testy/zlecenie_0001" in wynik.krok("mutacje")["opis"]
+
+
 @pytest.mark.parametrize("dopisek", ["", "  # pragma: allowlist secret"])
 def test_l_falszywy_sekret(repo, dopisek):
     galaz_kodu(repo, kod=KOD_DOBRY + f'\nKLUCZ = "{falszywy_klucz()}"{dopisek}\n')
