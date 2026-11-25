@@ -500,6 +500,24 @@ def test_r_tryb_zasady_wymaga_zielonych_testow_sedziego(repo, tresc, negatywne):
     negatywny_tylko(repo.sedzia("zasady", "--baza", "main"), *negatywne)
 
 
+def test_r_tryb_zasady_przy_czerwonej_bazie(repo):
+    # main czerwony między scaleniem testów zlecenia a scaleniem kodu: zasady przechodzą, jeśli nie dodają czerwieni
+    repo.zapisz("testy/zlecenie_0009/test_czeka.py", "def test_k01_czeka_na_kod():\n    assert False\n")
+    repo.zatwierdz("testy zlecenia bez kodu")
+    repo.galaz("zasady/w-trakcie-zlecenia")
+    repo.zapisz("dokumentacja/NOTATKA.md", "# Notatka\n")
+    repo.zatwierdz("zmiana zasad")
+    wynik = repo.sedzia("zasady", "--baza", "main")
+    assert wynik.kod == 0, wynik.wyjscie
+    assert wynik.krok("caly_zestaw")["liczby"]["nowe_czerwone"] == 0
+    assert wynik.krok("caly_zestaw")["liczby"]["czerwone_na_bazie"] == 1
+    repo.zapisz("testy/zlecenie_0009/test_nowy.py", "def test_k02_nowy():\n    assert False\n")
+    repo.zatwierdz("nowy czerwony test na gałęzi zasad")
+    wynik = repo.sedzia("zasady", "--baza", "main")
+    negatywny_tylko(wynik, "caly_zestaw")
+    assert wynik.krok("caly_zestaw")["szczegoly"][0] == "testy.zlecenie_0009.test_nowy::test_k02_nowy: failed (nowy)"
+
+
 def test_f_galaz_kodu_bez_zmian_w_plikach_py_nie_ma_czego_mutowac(repo):
     repo.zapisz(PLIK_TESTOW, TESTY_DOBRE)
     repo.zapisz(PLIK_KODU, KOD_DOBRY)

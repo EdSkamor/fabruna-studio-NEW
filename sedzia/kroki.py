@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import re
 import subprocess
+import tempfile
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -221,7 +222,33 @@ def zestaw_zasad(k: Kontekst) -> list[Krok]:
     if not sedziego:
         opis = "brak wyników testów sędziego z testy/sedzia"
     krok = _krok("testy_sedziego", bool(sedziego) and not zle, opis, {"testy": len(sedziego), "niezielone": len(zle)}, zle)
-    return [krok, _zestaw(przebieg)]
+    zestaw = _zestaw(przebieg)
+    if zestaw.wynik == "pozytywny" or not przebieg.wyniki or k.baza_commit is None:
+        return [krok, zestaw]
+    return [krok, _zestaw_wzgledem_bazy(k, przebieg)]
+
+
+def _zestaw_wzgledem_bazy(k: Kontekst, przebieg: Przebieg) -> Krok:
+    """Tryb „zasady” przy czerwonym zestawie: dozwolone są tylko testy czerwone już na bazie.
+
+    Między scaleniem testów zlecenia a scaleniem jego kodu `main` jest czerwony; zmiana zasad nie może wtedy czekać
+    na kod, ale nie może też dodać ani zepsuć żadnego testu. Baza to czysta kopia `baza_commit` (git archive).
+    """
+    with tempfile.TemporaryDirectory(prefix="sedzia-baza-") as tymczasowy:
+        archiwum = subprocess.run(["git", "-C", str(k.korzen), "archive", "--format=tar", k.baza_commit], capture_output=True, check=True)
+        subprocess.run(["tar", "-x", "-C", tymczasowy], input=archiwum.stdout, capture_output=True, check=True)
+        bazowy = uruchom_pytest(Path(tymczasowy), ["testy"])
+    czerwone_bazy = {t for t, stan in bazowy.wyniki.items() if stan in CZERWONE}
+    czerwone = sorted(t for t, stan in przebieg.wyniki.items() if stan in CZERWONE)
+    nowe = [t for t in czerwone if t not in czerwone_bazy]
+    dobrze = bool(bazowy.wyniki) and not nowe and przebieg.kod in (0, 1)
+    opis = (f"cały zestaw (pytest testy/): testy {len(przebieg.wyniki)}, czerwone {len(czerwone)}, "
+            f"w tym czerwone już na bazie {len(czerwone) - len(nowe)}, nowe czerwone {len(nowe)}")
+    if not bazowy.wyniki:
+        opis += " — brak raportu wyników z bazy"
+    liczby = {"testy": len(przebieg.wyniki), "czerwone": len(czerwone), "nowe_czerwone": len(nowe), "czerwone_na_bazie": len(czerwone) - len(nowe)}
+    szczegoly = [f"{t}: {przebieg.wyniki[t]} (nowy)" for t in nowe] + [f"uwaga — czerwony już na bazie: {t}" for t in czerwone if t not in nowe]
+    return _krok("caly_zestaw", dobrze, opis, liczby, szczegoly + ([] if dobrze else ogon(przebieg.wyjscie)))
 
 
 def sekrety(k: Kontekst) -> list[Krok]:

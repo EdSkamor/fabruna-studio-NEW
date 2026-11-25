@@ -96,7 +96,7 @@ Krok `mutacje` jest negatywny także wtedy, gdy: wśród zmian w `src/` nie ma p
 
 ### Tryb „zasady”
 
-`ochrona_sciezek`, `testy_sedziego` (każdy test z `testy/sedzia` ma wynik „passed” i jest ich co najmniej jeden), `caly_zestaw`, `sekrety`. Testy sędziego i cały zestaw to jeden przebieg `pytest testy/`, rozliczony dwa razy.
+`ochrona_sciezek`, `testy_sedziego` (każdy test z `testy/sedzia` ma wynik „passed” i jest ich co najmniej jeden), `caly_zestaw`, `sekrety`. Testy sędziego i cały zestaw to jeden przebieg `pytest testy/`, rozliczony dwa razy. Gdy cały zestaw jest czerwony, sędzia uruchamia go drugi raz na czystej kopii bazy (`git archive`): `caly_zestaw` jest pozytywny, jeśli każdy czerwony test był czerwony już na bazie (tak jest między scaleniem testów zlecenia a scaleniem jego kodu), a negatywny, gdy gałąź dodaje albo psuje choć jeden test. Testy sędziego muszą być zielone zawsze.
 
 ### Tryb „calosc” (main po scaleniu, przebieg nocny)
 
@@ -141,7 +141,7 @@ Testy uruchamiające mutmut mają znacznik `wolny`. Wszystkie muszą przechodzi�
 - Sędzia sam nie jest piaskownicą: kod wykonawcy działa w procesie pytest. Na PC usługa uruchamia sędziego w piaskownicy bwrap (rozdział 12), w CI — na jednorazowej maszynie bez sekretów. Celową manipulację wykrywa recenzja zmiany; sędzia ma jedynie proste bezpieczniki (raport JUnit, zakazane odwołania).
 - Wyrok lokalny zależy od lokalnego środowiska (na przykład `.venv`, `.git/info/exclude`). Wiążący jest wyrok z CI, a dopóki CI nie działa — wyrok uruchomiony ponownie przez sesję prowadzącą na czystym klonie (`drzewo_czyste: true`). Wyrok ogłoszony przez samego wykonawcę nie wystarcza.
 - Sędzia pilnuje całego `src/`; węższy zakres plików ze zlecenia sprawdza recenzent.
-- Między scaleniem testów zlecenia a scaleniem jego kodu `main` jest czerwony: tryb „calosc” daje wtedy wyrok negatywny, zgodnie z prawdą. Tryb „kod” wymaga zielonego całego zestawu, więc zlecenia idą pojedynczo — testy następnego zlecenia scala się po kodzie poprzedniego. [propozycja] Bramka „żaden test zielony na bazie nie jest czerwony na gałęzi” (drugi przebieg zestawu na bazie) pozwoliłaby prowadzić zlecenia równolegle.
+- Między scaleniem testów zlecenia a scaleniem jego kodu `main` jest czerwony: tryb „calosc” daje wtedy wyrok negatywny, zgodnie z prawdą. Tryb „zasady” dopuszcza czerwień obecną już na bazie (opis wyżej), więc zmiana zasad nie czeka na kod zlecenia. Tryb „kod” wymaga zielonego całego zestawu, więc zlecenia idą pojedynczo — testy następnego zlecenia scala się po kodzie poprzedniego. [propozycja] Bramka „żaden test zielony na bazie nie jest czerwony na gałęzi” (drugi przebieg zestawu na bazie) pozwoliłaby prowadzić zlecenia równolegle.
 - Stabilność to trzy kolejne przebiegi w tej samej kolejności; nie wykrywa zależności od kolejności testów.
 - Przypięte są tylko trzy narzędzia; ich zależności pośrednie nie.
 
