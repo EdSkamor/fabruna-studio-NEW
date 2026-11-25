@@ -54,7 +54,7 @@ def test_k01_kod_importuje_tylko_biblioteke_standardowa(katalog_src):
     drzewo = ast.parse((katalog_src / "fabruna" / "liczenie.py").read_text("utf-8"))
     importy = {alias.name for wezel in ast.walk(drzewo) if isinstance(wezel, ast.Import) for alias in wezel.names}
     importy |= {wezel.module for wezel in ast.walk(drzewo) if isinstance(wezel, ast.ImportFrom)}
-    assert importy == {"sys"}
+    assert importy == {"argparse"}
 '''
 
 TESTY_SLABE = '''\
@@ -75,17 +75,16 @@ TESTY_ZIELONE_BEZ_KODU = "def test_k01_nic():\n    assert True\n\n\ndef test_k02
 TEST_NIESTABILNY = '''
 
 def test_k02_raz_czerwony_raz_zielony():
-    import os
     from pathlib import Path
 
-    licznik = Path(os.environ["LICZNIK_PROBY"])
+    licznik = Path(LICZNIK_PROBY)
     numer = int(licznik.read_text()) + 1 if licznik.exists() else 1
     licznik.write_text(str(numer))
     assert numer % 2 == 0
 '''
 
 KOD_DOBRY = '''\
-import sys
+import argparse
 
 
 def suma(liczby):
@@ -102,7 +101,9 @@ def srednia(liczby):
 
 
 if __name__ == "__main__":
-    print(suma([int(napis) for napis in sys.argv[1:]]))
+    parser = argparse.ArgumentParser()
+    parser.add_argument("liczby", nargs="*", type=int)
+    print(suma(parser.parse_args().liczby))
 '''
 
 
@@ -139,7 +140,7 @@ def test_a_tryb_testy_sciezka_szczesliwa(repo):
     wynik = repo.sedzia(*TESTY)
     assert wynik.kod == 0, wynik.wyjscie
     assert (wynik.wyrok["wyrok"], wynik.wyrok["tryb"], wynik.wyrok["zlecenie"], wynik.wyrok["baza"]) == ("pozytywny", "testy", "0001", "main")
-    assert list(wynik.kroki) == ["ochrona_sciezek", "zbieranie_testow", "pokrycie_kryteriow", "czerwone_na_bazie", "stabilnosc", "sekrety"]
+    assert list(wynik.kroki) == ["ochrona_sciezek", "zakazy", "zbieranie_testow", "pokrycie_kryteriow", "czerwone_na_bazie", "stabilnosc", "sekrety", "nienaruszalnosc"]
     assert set(wynik.kroki.values()) == {"pozytywny"}
     assert wynik.wyrok["drzewo_czyste"] is True
     assert wynik.krok("czerwone_na_bazie")["liczby"] == {"testy": 4, "czerwone": 4, "zielone_na_bazie": 0, "kryteria_bez_czerwonego_testu": 0}
@@ -180,8 +181,9 @@ def test_d_testy_zielone_na_bazie(repo):
 
 
 def test_e_test_niestabilny(repo, tmp_path):
-    galaz_testow(repo, TESTY_DOBRE + TEST_NIESTABILNY)
-    wynik = repo.sedzia(*TESTY, srodowisko={"LICZNIK_PROBY": str(tmp_path / "licznik.txt")})
+    licznik = f"\nLICZNIK_PROBY = {str(tmp_path / 'licznik.txt')!r}\n"
+    galaz_testow(repo, TESTY_DOBRE + licznik + TEST_NIESTABILNY)
+    wynik = repo.sedzia(*TESTY)
     negatywny_tylko(wynik, "stabilnosc")
     assert wynik.krok("stabilnosc")["liczby"] == {"przebiegi": 3, "testy": 5, "niestabilne": 1}
     assert wynik.krok("stabilnosc")["szczegoly"][0].endswith("test_k02_raz_czerwony_raz_zielony: failed / passed / failed")
@@ -192,7 +194,7 @@ def test_f_tryb_kod_sciezka_szczesliwa(repo):
     galaz_kodu(repo)
     wynik = repo.sedzia(*KOD)
     assert wynik.kod == 0, wynik.wyjscie
-    assert list(wynik.kroki) == ["ochrona_sciezek", "testy_zlecenia", "stabilnosc", "caly_zestaw", "sekrety", "mutacje"]
+    assert list(wynik.kroki) == ["ochrona_sciezek", "zakazy", "testy_zlecenia", "stabilnosc", "caly_zestaw", "sekrety", "mutacje", "nienaruszalnosc"]
     assert set(wynik.kroki.values()) == {"pozytywny"}
     liczby = wynik.krok("mutacje")["liczby"]
     assert liczby["wszystkie"] >= 8 and liczby["prog_proc"] == 70
@@ -268,7 +270,8 @@ def test_l_falszywy_sekret(repo, dopisek):
     galaz_kodu(repo, kod=KOD_DOBRY + f'\nKLUCZ = "{falszywy_klucz()}"{dopisek}\n')
     wynik = repo.sedzia(*KOD)
     negatywny_tylko(wynik, "sekrety")
-    assert wynik.krok("sekrety")["szczegoly"] == [f"{PLIK_KODU}:20 — AWS Access Key"]
+    wiersz = len(KOD_DOBRY.splitlines()) + 2
+    assert wynik.krok("sekrety")["szczegoly"] == [f"{PLIK_KODU}:{wiersz} — AWS Access Key"]
     assert falszywy_klucz() not in wynik.wyjscie + json.dumps(wynik.wyrok), "sędzia nie powiela treści sekretu"
 
 
@@ -389,6 +392,11 @@ def test_u_blad_uzycia_to_kod_2_bez_wyroku(repo, argumenty):
 def test_v_kod_nie_wylacza_mutacji_i_nie_rozpoznaje_narzedzi_sedziego(repo, stare, nowe):
     galaz_kodu(repo, kod=KOD_DOBRY.replace(stare, nowe))
     wynik = repo.sedzia(*KOD)
+    if "pragma" not in nowe:
+        # Rozpoznanie narzędzi sędziego zatrzymuje już krok „zakazy”; mutacje są wtedy pomijane.
+        assert wynik.kod == 1 and wynik.kroki["zakazy"] == "negatywny", wynik.wyjscie
+        assert wynik.kroki["mutacje"] == "pominiety"
+        return
     negatywny_tylko(wynik, "mutacje")
     assert wynik.krok("mutacje")["liczby"] == {"niedozwolone_odwolania": 1}
     assert wynik.krok("mutacje")["szczegoly"] == [f"{PLIK_KODU}:7"]
@@ -413,7 +421,7 @@ def test_v_przerwany_pytest_z_kodem_zero_nie_jest_zielony(repo, sciezka, negatyw
     galaz_kodu(repo)
     repo.zapisz(sciezka, "import os\n\n\ndef podwoj(liczba):\n    os._exit(0)\n\n\ndef suma(liczby):\n    os._exit(0)\n")
     repo.zatwierdz("kod, który kończy proces testów kodem zero")
-    negatywny_tylko(repo.sedzia(*KOD), *negatywne)
+    negatywny_tylko(repo.sedzia(*KOD), *negatywne, "zakazy")
 
 
 def test_m_przeniesienie_pliku_testow_do_src_nie_ukrywa_zmiany(repo):
@@ -536,3 +544,33 @@ def test_k_testy_tylko_przez_podproces_nie_zabijaja_mutantow(repo):
     wynik = repo.sedzia(*KOD)
     negatywny_tylko(wynik, "mutacje")
     assert "mutmut przerwał pracę" in wynik.krok("mutacje")["opis"]
+
+
+@pytest.mark.parametrize(
+    "kod",
+    [
+        "import atexit\n\n\ndef suma(liczby):\n    atexit.register(print)\n    return sum(liczby)\n",
+        "import sys\n\n\ndef suma(liczby):\n    return sum(liczby) if sys.argv else 0\n",
+        "def suma(liczby):\n    return getattr(liczby, 'co' + 'kolwiek', sum)(liczby)\n",
+        "def suma(liczby):\n    return eval('sum')(liczby)\n",
+    ],
+)
+def test_x_kod_nie_siega_do_procesu_ani_pytest(repo, kod):
+    """Konstrukcje, którymi kod pod testem mógłby podrobić raport pytest (atexit + os._exit, sys.argv…)."""
+    galaz_kodu(repo, kod=KOD_DOBRY + "\n\n" + kod.replace("def suma", "def suma_2"))
+    wynik = repo.sedzia(*KOD)
+    assert wynik.kod == 1 and wynik.kroki["zakazy"] == "negatywny", wynik.wyjscie
+
+
+def test_x_testy_nie_rejestruja_hookow_pytest(repo):
+    galaz_testow(repo, TESTY_DOBRE + "\n\ndef pytest_runtest_makereport(item, call):\n    return None\n")
+    wynik = repo.sedzia(*TESTY)
+    negatywny_tylko(wynik, "zakazy")
+
+
+def test_x_testy_zmieniajace_repozytorium_w_trakcie_oceny(repo):
+    zapis = "\n\ndef test_k01_podrzuca_plik():\n    from pathlib import Path\n    (Path(__file__).parents[2] / 'podrzucony.py').write_text('')\n    assert False\n"
+    galaz_testow(repo, TESTY_DOBRE + zapis)
+    wynik = repo.sedzia(*TESTY)
+    negatywny_tylko(wynik, "nienaruszalnosc")
+    assert wynik.krok("nienaruszalnosc")["szczegoly"] == ["podrzucony.py"]

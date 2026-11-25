@@ -1,0 +1,15 @@
+# SZKIC AI — do pracy autora.
+[Unit]
+Description=Sędzia Fabruna: ocena zgłoszonych gałęzi i wypychanie na GitHub
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+User=sedzia
+Group=sedzia
+UMask=0022
+ExecStart=/usr/bin/python3 -I /usr/local/lib/fabruna-sedzia/kolejka.py
+Nice=10
+TimeoutStartSec=8h
+PrivateTmp=yes

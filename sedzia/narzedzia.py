@@ -64,7 +64,9 @@ def modul(nazwa: str, argumenty: list[str], katalog: Path, limit_s: int) -> subp
     """Uruchamia `python -m nazwa` tym samym interpreterem co sędzia."""
     wymagaj(nazwa.split(".")[0])
     return subprocess.run(
-        [sys.executable, "-m", nazwa, *argumenty],
+        # -I: bez katalogu bieżącego na ścieżce importu, bez site użytkownika i zmiennych PYTHON*,
+        # więc pliki podrzucone przez testy (sitecustomize, usercustomize) nie wpływają na kolejne przebiegi.
+        [sys.executable, "-I", "-m", nazwa, *argumenty],
         cwd=katalog,
         capture_output=True,
         text=True,

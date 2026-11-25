@@ -1,0 +1,70 @@
+# Niezależna recenzja każdego pull requesta do main (wymagane sprawdzenie „recenzja”).
+# SZKIC AI — do pracy autora.
+#
+# pull_request_target: przepływ i skrypt recenzji pochodzą z main, nie z gałęzi PR.
+# Kod gałęzi nie jest uruchamiany — trafia do recenzenta wyłącznie jako tekst.
+# Recenzent (Claude Code) działa bez narzędzi. Sekret: CLAUDE_CODE_OAUTH_TOKEN (ustawia właściciel).
+name: recenzja
+
+on:
+  pull_request_target:
+    branches: [main]
+    types: [opened, synchronize, reopened, ready_for_review]
+
+permissions:
+  contents: read
+  pull-requests: write
+
+concurrency:
+  group: recenzja-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  recenzja:
+    name: recenzja
+    runs-on: ubuntu-24.04
+    timeout-minutes: 40
+    steps:
+      # Pominięte zadanie liczy się jako spełnione sprawdzenie, dlatego rozwidlenia dostają jawny błąd, nie pominięcie.
+      - name: Tylko gałęzie z tego repozytorium
+        env:
+          ZRODLO: ${{ github.event.pull_request.head.repo.full_name }}
+        run: |
+          if [ "${ZRODLO}" != "${GITHUB_REPOSITORY}" ]; then
+            echo "Pull request z rozwidlenia (${ZRODLO}) — bez recenzji automatycznej; decyduje właściciel." >&2
+            exit 1
+          fi
+
+      - name: Repozytorium z main (zaufane)
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Gałąź pull requesta jako dane
+        env:
+          PR: ${{ github.event.pull_request.number }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          git fetch --no-tags origin "+refs/pull/${PR}/head:refs/remotes/pr/head"
+          test "$(git rev-parse refs/remotes/pr/head)" = "${HEAD_SHA}"
+
+      - name: Claude Code
+        run: npm install -g @anthropic-ai/claude-code@2.1.332
+
+      - name: Recenzja
+        env:
+          CLAUDE_CODE_OAUTH_TOKEN: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+          GALAZ: ${{ github.event.pull_request.head.ref }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: python3 -I sedzia/ci/recenzja.py --galaz "${GALAZ}" --pr "${HEAD_SHA}" --baza origin/main --wyjscie "${RUNNER_TEMP}/recenzja.md"
+
+      - name: Recenzja jako komentarz
+        if: always() && github.event.pull_request.head.repo.full_name == github.repository
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR: ${{ github.event.pull_request.number }}
+        run: |
+          if [ -s "${RUNNER_TEMP}/recenzja.md" ]; then
+            gh pr comment "${PR}" --repo "${GITHUB_REPOSITORY}" --body-file "${RUNNER_TEMP}/recenzja.md"
+          fi

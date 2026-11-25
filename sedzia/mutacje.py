@@ -64,7 +64,7 @@ def _toml(tabele: dict[str, dict]) -> str:
     return "\n".join(wiersze)
 
 
-def mutuj(korzen: Path, pliki: list[str] | None, testy: str, prog: float) -> tuple[bool, str, dict, list[str]]:
+def mutuj(korzen: Path, pliki: list[str] | None, testy: str, prog: float, pyproject: str | None = None) -> tuple[bool, str, dict, list[str]]:
     """Mutuje podane pliki (None = całe src/) i sprawdza je testami `testy`; zwraca (dobrze, opis, liczby, szczegóły)."""
     mutowane = pliki if pliki is not None else [p.relative_to(korzen).as_posix() for p in sorted((korzen / "src").rglob("*.py"))]
     odwolania = _odwolania(korzen, mutowane)
@@ -72,7 +72,8 @@ def mutuj(korzen: Path, pliki: list[str] | None, testy: str, prog: float) -> tup
         opis = "mutowany kod wyłącza mutacje („pragma: no mutate”) albo odwołuje się do pytest lub mutmut — niedozwolone"
         return False, opis, {"niedozwolone_odwolania": len(odwolania)}, odwolania
 
-    narzedzia = tomllib.loads((korzen / "pyproject.toml").read_text("utf-8")).get("tool", {})
+    tekst = pyproject if pyproject is not None else (korzen / "pyproject.toml").read_text("utf-8")
+    narzedzia = tomllib.loads(tekst).get("tool", {})
     ustawienia = {
         **narzedzia.get("mutmut", {}),
         "source_paths": ["src"],
