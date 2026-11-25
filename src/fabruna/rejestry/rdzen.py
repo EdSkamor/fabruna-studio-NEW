@@ -11,7 +11,9 @@ from __future__ import annotations
 import argparse
 import csv
 import datetime
+import io
 import json
+import os
 import re
 import sys
 from collections import namedtuple
@@ -23,13 +25,16 @@ CZYTANIE = {"encoding": "utf-8-sig", "newline": ""}
 ZAPIS = {"encoding": "utf-8", "newline": ""}
 CSV_CZYTANIE = {"delimiter": ";", "quotechar": '"'}
 CSV_ZAPIS = {"delimiter": ";", "quotechar": '"', "quoting": csv.QUOTE_ALL, "lineterminator": "\n"}
-TRYB_ZAPISU = "w"
+TRYB_ZAPISU = "x"  # plik tymczasowy zawsze nowy; cel podmienia os.replace
+LIMIT_POLA = 2**31 - 1  # długość pola CSV bez praktycznego limitu (K01 zlecenia 0002)
+NAJWYZSZY_NUMER = 9999
 
 KOLUMNA_PLIKU = "-"
 KOLUMNA_ID = "id"
 PUSTY = "plik jest pusty, brak nagłówka"
 BRAK = "brak wartości w polu wymaganym"
 SPOZA_KALENDARZA = "data nie istnieje w kalendarzu"
+BRAK_NUMERU = "brak wolnego numeru: kolejny identyfikator przekroczyłby {prefiks}9999"
 
 # ---------------------------------------------------------------- słowniki
 
@@ -184,8 +189,11 @@ def _wczytaj(sciezka, rodzaj, partia):
     plik = str(sciezka)
     wynik = Wynik()
     pozycje = []
+    csv.field_size_limit(LIMIT_POLA)
     with open(sciezka, **CZYTANIE) as strumien:
         rekordy = list(csv.reader(strumien, **CSV_CZYTANIE))
+    while rekordy and not rekordy[-1]:
+        rekordy.pop()  # całkowicie puste wiersze na końcu pliku są pomijane
     if not rekordy:
         wynik.bledy.append(Zgloszenie(plik, 1, KOLUMNA_PLIKU, PUSTY))
         return wynik, pozycje
@@ -216,7 +224,16 @@ def _wczytaj(sciezka, rodzaj, partia):
         elif identyfikator:
             pierwsze[identyfikator] = numer
         pozycje.append((plik, numer, wiersz))
+    wynik.bledy = _jedno_na_komorke(wynik.bledy)
     return wynik, pozycje
+
+
+def _jedno_na_komorke(bledy):
+    """Zostawia pierwszy błąd dla każdej trójki (plik, wiersz, kolumna), w kolejności zgłoszeń."""
+    komorki = {}
+    for blad in bledy:
+        komorki.setdefault(blad[:3], blad)
+    return list(komorki.values())
 
 
 def _ostrzezenia(pozycje, kolumna):
@@ -247,8 +264,9 @@ def scal_pliki(partie, rodzaj, rejestr=None):
     wynik = Wynik()
     po_id = {}
     bez_id = []
-    for sciezka in ([rejestr] if rejestr else []) + list(partie):
-        czesc, pozycje = _wczytaj(sciezka, opis_rodzaju, True)
+    pliki = [(rejestr, False)] if rejestr else []
+    for sciezka, partia in pliki + [(p, True) for p in partie]:
+        czesc, pozycje = _wczytaj(sciezka, opis_rodzaju, partia)
         wynik.bledy += czesc.bledy
         for pozycja in pozycje:
             plik, numer, wiersz = pozycja
@@ -261,13 +279,19 @@ def scal_pliki(partie, rodzaj, rejestr=None):
                 pierwszy_plik, pierwszy_numer, _ = po_id[identyfikator]
                 opis = f"identyfikator {identyfikator} ma inną treść niż w {pierwszy_plik}, wiersz {pierwszy_numer}"
                 wynik.bledy.append(Zgloszenie(plik, numer, KOLUMNA_ID, opis))
+    wynik.bledy = _jedno_na_komorke(wynik.bledy)
     if wynik.bledy:
         return [], wynik
     ostatni = max((int(i.removeprefix(opis_rodzaju.prefiks)) for i in po_id), default=0)
-    for pozycja in bez_id:
+    for plik, numer, wiersz in bez_id:
         ostatni += 1
-        pozycja[2][KOLUMNA_ID] = f"{opis_rodzaju.prefiks}{ostatni:04d}"
-        po_id[pozycja[2][KOLUMNA_ID]] = pozycja
+        if ostatni > NAJWYZSZY_NUMER:
+            wynik.bledy.append(Zgloszenie(plik, numer, KOLUMNA_ID, BRAK_NUMERU.format(prefiks=opis_rodzaju.prefiks)))
+            continue
+        wiersz[KOLUMNA_ID] = f"{opis_rodzaju.prefiks}{ostatni:04d}"
+        po_id[wiersz[KOLUMNA_ID]] = (plik, numer, wiersz)
+    if wynik.bledy:
+        return [], wynik
     kolejne = [po_id[i] for i in sorted(po_id)]
     wynik.ostrzezenia = _ostrzezenia(kolejne, opis_rodzaju.klucz)
     wynik.wiersze = len(kolejne)
@@ -289,18 +313,42 @@ def _sprawdz(argumenty):
     return _zakoncz(sprawdz_plik(argumenty.plik, argumenty.rodzaj, argumenty.partia), argumenty)
 
 
+def _zapisz_wszystko_albo_nic(cele):
+    """Zapisuje pary (ścieżka, tekst): najpierw wszystkie pliki tymczasowe obok celów, potem podmiana.
+
+    Błąd przed podmianą nie zmienia żadnego celu; pliki tymczasowe są zawsze usuwane.
+    """
+    for sciezka, _tekst in cele:
+        if os.path.isdir(sciezka):
+            raise IsADirectoryError(f"ścieżka wskazuje katalog, nie plik: {sciezka!r}")
+    tymczasowe = []
+    try:
+        for sciezka, tekst in cele:
+            katalog, nazwa = os.path.split(os.path.abspath(sciezka))
+            tymczasowa = os.path.join(katalog, f".{nazwa}.{os.urandom(6).hex()}.tmp")
+            with open(tymczasowa, TRYB_ZAPISU, **ZAPIS) as strumien:
+                tymczasowe.append(tymczasowa)
+                strumien.write(tekst)
+        for (sciezka, _tekst), tymczasowa in zip(cele, tymczasowe):
+            os.replace(tymczasowa, sciezka)
+    finally:
+        for tymczasowa in tymczasowe:
+            if os.path.lexists(tymczasowa):
+                os.unlink(tymczasowa)
+
+
 def _scal(argumenty):
     wiersze, wynik = scal_pliki(argumenty.partie, argumenty.rodzaj, argumenty.rejestr)
     if wynik.poprawny:
         naglowek = RODZAJE[argumenty.rodzaj].naglowek
-        with open(argumenty.wyjscie, TRYB_ZAPISU, **ZAPIS) as strumien:
-            pisarz = csv.writer(strumien, **CSV_ZAPIS)
-            pisarz.writerow(naglowek)
-            pisarz.writerows([w[k] for k in naglowek] for w in wiersze)
-    if argumenty.raport:
-        with open(argumenty.raport, TRYB_ZAPISU, **ZAPIS) as strumien:
-            for zgloszenie in wynik.ostrzezenia:
-                print(zgloszenie, file=strumien)
+        bufor = io.StringIO()
+        pisarz = csv.writer(bufor, **CSV_ZAPIS)
+        pisarz.writerow(naglowek)
+        pisarz.writerows([w[k] for k in naglowek] for w in wiersze)
+        cele = [(argumenty.wyjscie, bufor.getvalue())]
+        if argumenty.raport:
+            cele.append((argumenty.raport, "".join(f"{z}\n" for z in wynik.ostrzezenia)))
+        _zapisz_wszystko_albo_nic(cele)
     return _zakoncz(wynik, argumenty)
 
 
@@ -312,7 +360,7 @@ def main(argv=None):
         return wyjscie.code
     try:
         return argumenty.wykonaj(argumenty)
-    except (OSError, UnicodeDecodeError) as blad:
+    except (OSError, ValueError, csv.Error) as blad:  # ValueError obejmuje UnicodeDecodeError i bajt NUL
         print(f"błąd wejścia/wyjścia: {blad}", file=sys.stderr)
         return 2
 
