@@ -90,7 +90,7 @@ Krok `czerwone_na_bazie` wypisuje też ostrzeżenia, które nie zmieniają wyrok
 | `stabilnosc` | trzy przebiegi dają identyczny wynik każdego testu |
 | `caly_zestaw` | `pytest testy/` kończy się kodem 0 i zostawia raport wyników |
 | `sekrety` | skan zmienionych plików nie daje nowego znaleziska |
-| `mutacje` | wynik mutacyjny plików `.py` z `src/` zmienionych względem bazy, liczony testami zlecenia, jest nie niższy niż próg (domyślnie 70%) |
+| `mutacje` | wynik mutacyjny plików `.py` z `src/` zmienionych względem bazy, liczony testami wszystkich zleceń (`testy/` bez `testy/sedzia`), jest nie niższy niż próg (domyślnie 70%) |
 
 Krok `mutacje` jest negatywny także wtedy, gdy: wśród zmian w `src/` nie ma pliku `.py`; nie powstał żaden mutant; mutmut przerwał pracę (na przykład żaden test nie wykonuje zmutowanej funkcji); mutowany kod zawiera `pragma: no mutate` albo odwołanie do pytest lub mutmut.
 
@@ -110,7 +110,7 @@ Krok `mutacje` jest negatywny także wtedy, gdy: wśród zmian w `src/` nie ma p
 - Mutant bez testu, ocalały i podejrzany zostają w mianowniku, więc obniżają wynik.
 - Przykład: 11 mutantów, 1 pominięty, 6 zabitych, 1 z przekroczonym czasem → (6 + 1) / (11 − 1) = 70%.
 
-Sędzia uruchamia mutmut w piaskownicy: do katalogu tymczasowego kopiuje `src/` i `testy/` (bez `testy/sedzia`) oraz zapisuje tam własny `pyproject.toml`. Bierze do niego tabelę `[tool.pytest.ini_options]` i `[tool.mutmut]` z repozytorium, po czym sam ustawia `source_paths = ["src"]`, `also_copy = ["testy"]`, `only_mutate` (lista zmienionych plików) i `pytest_add_cli_args_test_selection` (katalog testów zlecenia). Liczby czyta z `mutants/mutmut-cicd-stats.json` (polecenie `mutmut export-cicd-stats`), a nazwy niezabitych mutantów z `mutmut results`. Piaskownica znika po przebiegu, dlatego `wyrok.json` w szczegółach kroku `mutacje` niesie każdego niezabitego mutanta razem z różnicą względem oryginału (`mutmut show`, pierwszych 40) — to materiał dla autora testów i recenzenta.
+Sędzia uruchamia mutmut w piaskownicy: do katalogu tymczasowego kopiuje `src/` i `testy/` (bez `testy/sedzia`) oraz zapisuje tam własny `pyproject.toml`. Bierze do niego tabelę `[tool.pytest.ini_options]` i `[tool.mutmut]` z repozytorium, po czym sam ustawia `source_paths = ["src"]`, `also_copy = ["testy"]`, `only_mutate` (lista zmienionych plików) i `pytest_add_cli_args_test_selection` (`testy`; katalog `testy/sedzia` nie trafia do piaskownicy). Testy wszystkich zleceń, nie tylko bieżącego: mutmut mutuje cały zmieniony plik, a zlecenie poprawek zmienia funkcje, których zachowanie opisują wcześniejsze zlecenia. Że zachowanie z bieżącego zlecenia jest przetestowane, pilnuje osobno krok `pokrycie_kryteriow` i wymóg testów czerwonych na bazie w trybie `testy`. Liczby czyta z `mutants/mutmut-cicd-stats.json` (polecenie `mutmut export-cicd-stats`), a nazwy niezabitych mutantów z `mutmut results`. Piaskownica znika po przebiegu, dlatego `wyrok.json` w szczegółach kroku `mutacje` niesie każdego niezabitego mutanta razem z różnicą względem oryginału (`mutmut show`, pierwszych 40) — to materiał dla autora testów i recenzenta.
 
 ## 8. Co z tego wynika dla autora testów
 
